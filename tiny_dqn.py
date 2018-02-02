@@ -28,14 +28,14 @@ import numpy as np
 import os
 import tensorflow as tf
 
-env = gym.make("MsPacman-v0")
+env = gym.make("Alien-v0")
 done = True  # env needs to be reset
 
 # First let's build the two DQNs (online & target)
-input_height = 88
-input_width = 80
-input_channels = 1
-conv_n_maps = [32, 64, 64]
+input_height = 88 #84
+input_width = 80 #84
+input_channels = 1 #4
+conv_n_maps = [32, 64, 64] 
 conv_kernel_sizes = [(8,8), (4,4), (3,3)]
 conv_strides = [4, 2, 1]
 conv_paddings = ["SAME"] * 3 
@@ -70,6 +70,8 @@ def q_network(X_state, name):
 
 X_state = tf.placeholder(tf.float32, shape=[None, input_height, input_width,
                                             input_channels])
+
+#input layers
 online_q_values, online_vars = q_network(X_state, name="q_networks/online")
 target_q_values, target_vars = q_network(X_state, name="q_networks/target")
 
@@ -82,6 +84,7 @@ copy_online_to_target = tf.group(*copy_ops)
 learning_rate = 0.001
 momentum = 0.95
 
+# initialize q with random weights
 with tf.variable_scope("train"):
     X_action = tf.placeholder(tf.int32, shape=[None])
     y = tf.placeholder(tf.float32, shape=[None, 1])
@@ -101,7 +104,7 @@ init = tf.global_variables_initializer()
 saver = tf.train.Saver()
 
 # Let's implement a simple replay memory
-replay_memory_size = 20000
+replay_memory_size = 20000 # 1000000
 replay_memory = deque([], maxlen=replay_memory_size)
 
 def sample_memories(batch_size):
@@ -138,10 +141,10 @@ def preprocess_observation(obs):
     return img.reshape(88, 80, 1)
 
 # TensorFlow - Execution phase
-training_start = 10000  # start training after 10,000 game iterations
+training_start = 10000  # start training after 10,000 game iterations, 50,000
 discount_rate = 0.99
 skip_start = 90  # Skip the start of every game (it's just waiting time).
-batch_size = 50
+batch_size = 50  # 32
 iteration = 0  # game iterations
 done = True # env needs to be reset
 
@@ -162,6 +165,9 @@ with tf.Session() as sess:
         if step >= args.number_steps:
             break
         iteration += 1
+
+        #jjprint()
+
         if args.verbosity > 0:
             print("\rIteration {}   Training step {}/{} ({:.1f})%   "
                   "Loss {:5f}    Mean Max-Q {:5f}   ".format(
@@ -188,6 +194,7 @@ with tf.Session() as sess:
         replay_memory.append((state, action, reward, next_state, 1.0 - done))
         state = next_state
 
+
         if args.test:
             continue
 
@@ -199,9 +206,13 @@ with tf.Session() as sess:
             total_max_q = 0.0
             game_length = 0
 
+        #env.clone_state()
+
         if iteration < training_start or iteration % args.learn_iterations != 0:
             continue # only train after warmup period and at regular intervals
         
+
+
         # Sample memories and use the target DQN to produce the target Q-Value
         X_state_val, X_action_val, rewards, X_next_state_val, continues = (
             sample_memories(batch_size))
@@ -214,6 +225,8 @@ with tf.Session() as sess:
         _, loss_val = sess.run([training_op, loss], feed_dict={
             X_state: X_state_val, X_action: X_action_val, y: y_val})
 
+
+
         # Regularly copy the online DQN to the target DQN
         if step % args.copy_steps == 0:
             copy_online_to_target.run()
@@ -221,3 +234,4 @@ with tf.Session() as sess:
         # And save regularly
         if step % args.save_steps == 0:
             saver.save(sess, args.path)
+            print("ok")
