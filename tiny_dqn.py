@@ -27,6 +27,7 @@ import gym
 import numpy as np
 import os
 import tensorflow as tf
+import csv
 
 env = gym.make("Alien-v0")
 done = True  # env needs to be reset
@@ -139,6 +140,11 @@ def preprocess_observation(obs):
     img[img==mspacman_color] = 0 # Improve contrast
     img = (img - 128) / 128 - 1 # normalize from -1. to 1.
     return img.reshape(88, 80, 1)
+
+def save_to_csv(file_name, ):
+	fd = open(file_name,'a')
+	fd.write(myCsvRow)
+	fd.close()
 
 # TensorFlow - Execution phase
 training_start = 10000  # start training after 10,000 game iterations, 50,000
