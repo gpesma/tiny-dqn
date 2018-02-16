@@ -14,7 +14,7 @@ parser.add_argument("-c", "--copy-steps", type=int, default=10000,
     help="number of training steps between copies of online DQN to target DQN")
 parser.add_argument("-r", "--render", action="store_true", default=False,
     help="render the game during training or testing")
-parser.add_argument("-p", "--path", default="my_dqn.ckpt",
+parser.add_argument("-p", "--path", default="./my_dqn.ckpt",
     help="path of the checkpoint file")
 parser.add_argument("-t", "--test", action="store_true", default=False,
     help="test (no learning and minimal epsilon)")
@@ -29,7 +29,7 @@ import os
 import tensorflow as tf
 import csv
 
-env = gym.make("Alien-v0")
+env = gym.make("Boxing-v0")
 done = True  # env needs to be reset
 
 # First let's build the two DQNs (online & target)
@@ -131,6 +131,7 @@ def epsilon_greedy(q_values, step):
     else:
         return np.argmax(q_values) # optimal action
 
+
 # We need to preprocess the images to speed up training
 mspacman_color = np.array([210, 164, 74]).mean()
 
@@ -141,9 +142,10 @@ def preprocess_observation(obs):
     img = (img - 128) / 128 - 1 # normalize from -1. to 1.
     return img.reshape(88, 80, 1)
 
-def save_to_csv(file_name, ):
+def save_to_csv(file_name,games_played, loss_val, mean_max_q, total_reward):
 	fd = open(file_name,'a')
-	fd.write(myCsvRow)
+	to_write =str(games_played)+","+str(loss_val)+","+str(mean_max_q)+","+str(total_reward)
+	fd.write(to_write)
 	fd.close()
 
 # TensorFlow - Execution phase
@@ -159,13 +161,15 @@ loss_val = np.infty
 game_length = 0
 total_max_q = 0
 mean_max_q = 0.0
-
+games_played = 1
 with tf.Session() as sess:
     if os.path.isfile(args.path + ".index"):
         saver.restore(sess, args.path)
     else:
         init.run()
         copy_online_to_target.run()
+
+    saver.save(sess, args.path)
     while True:
         step = global_step.eval()
         if step >= args.number_steps:
@@ -173,6 +177,10 @@ with tf.Session() as sess:
         iteration += 1
 
         #jjprint()
+
+        # check progress
+
+
 
         if args.verbosity > 0:
             print("\rIteration {}   Training step {}/{} ({:.1f})%   "
@@ -188,9 +196,27 @@ with tf.Session() as sess:
         if args.render:
             env.render()
 
+
+        if games_played % 100 == 0:
+        	total_reward = 0
+        	while not done:
+        		q_values = target_q_values.eval(feed_dict={X_state: [state]})
+        		action = np.argmax(q_values)
+        		obs, reward, done, info = env.step(action)
+        		next_state = preprocess_observation(obs)
+        		state = next_state
+        		total_reward += reward
+        	for skip in range(skip_start): # skip the start of each game
+        		obs, reward, done, info = env.step(0)
+        		state = preprocess_observation(obs)
+        	save_to_csv("test1.csv", games_played, loss_val, q_values.max()/ game_length, total_reward)
+        	continue
+
+
         # Online DQN evaluates what to do
         q_values = online_q_values.eval(feed_dict={X_state: [state]})
         action = epsilon_greedy(q_values, step)
+
 
         # Online DQN plays
         obs, reward, done, info = env.step(action)
