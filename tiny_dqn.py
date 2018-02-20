@@ -29,6 +29,16 @@ import os
 import tensorflow as tf
 import csv
 
+
+# with tf.device('/gpu:0'):
+#     a = tf.constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], shape=[2, 3], name='a')
+#     b = tf.constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], shape=[3, 2], name='b')
+#     c = tf.matmul(a, b)
+
+# with tf.Session() as sess:
+#     print (sess.run(c))
+
+
 env = gym.make("Boxing-v0")
 done = True  # env needs to be reset
 
@@ -142,9 +152,9 @@ def preprocess_observation(obs):
     img = (img - 128) / 128 - 1 # normalize from -1. to 1.
     return img.reshape(88, 80, 1)
 
-def save_to_csv(file_name,games_played, loss_val, mean_max_q, total_reward):
+def save_to_csv(file_name,iteration, step, perc, loss_val, mean_max_q):
 	fd = open(file_name,'a')
-	to_write =str(games_played)+","+str(loss_val)+","+str(mean_max_q)+","+str(total_reward)
+	to_write =str(iteration)+","+ str(step)+","+str(perc)+","+str(loss_val)+","+str(mean_max_q)+"\n"
 	fd.write(to_write)
 	fd.close()
 
@@ -169,8 +179,9 @@ with tf.Session() as sess:
         init.run()
         copy_online_to_target.run()
 
-    saver.save(sess, args.path)
+    #saver.save(sess, args.path)
     while True:
+        #saver.restore
         step = global_step.eval()
         if step >= args.number_steps:
             break
@@ -182,35 +193,40 @@ with tf.Session() as sess:
 
 
 
-        if args.verbosity > 0:
+        if iteration % 100 == 0:
             print("\rIteration {}   Training step {}/{} ({:.1f})%   "
                   "Loss {:5f}    Mean Max-Q {:5f}   ".format(
             iteration, step, args.number_steps, step * 100 / args.number_steps,
             loss_val, mean_max_q), end="")
+            save_to_csv("test1.csv",iteration,step,step * 100 / args.number_steps,loss_val,mean_max_q)
         if done: # game over, start again
             obs = env.reset()
             for skip in range(skip_start): # skip the start of each game
                 obs, reward, done, info = env.step(0)
             state = preprocess_observation(obs)
+            games_played = games_played + 1
+
 
         if args.render:
             env.render()
 
+        
+        # if iteration % 100 == 0:
+        # 	total_reward = 0
+        # 	while not done:
+        # 		q_values = target_q_values.eval(feed_dict={X_state: [state]})
+        # 		action = np.argmax(q_values)
+        # 		obs, reward, done, info = env.step(action)
+        # 		next_state = preprocess_observation(obs)
+        # 		state = next_state
+        # 		total_reward += reward
 
-        if games_played % 100 == 0:
-        	total_reward = 0
-        	while not done:
-        		q_values = target_q_values.eval(feed_dict={X_state: [state]})
-        		action = np.argmax(q_values)
-        		obs, reward, done, info = env.step(action)
-        		next_state = preprocess_observation(obs)
-        		state = next_state
-        		total_reward += reward
-        	for skip in range(skip_start): # skip the start of each game
-        		obs, reward, done, info = env.step(0)
-        		state = preprocess_observation(obs)
-        	save_to_csv("test1.csv", games_played, loss_val, q_values.max()/ game_length, total_reward)
-        	continue
+        # 	for skip in range(skip_start): # skip the start of each game
+        # 		obs, reward, done, info = env.step(0)
+        # 		state = preprocess_observation(obs)
+        # 	save_to_csv("test1.csv", games_played, loss_val, q_values.max()/ game_length, total_reward)
+        # 	print (total_reward)
+        # 	continue
 
 
         # Online DQN evaluates what to do
@@ -237,6 +253,7 @@ with tf.Session() as sess:
             mean_max_q = total_max_q / game_length
             total_max_q = 0.0
             game_length = 0
+            #games_played = games_played + 1
 
         #env.clone_state()
 
@@ -258,7 +275,6 @@ with tf.Session() as sess:
             X_state: X_state_val, X_action: X_action_val, y: y_val})
 
 
-
         # Regularly copy the online DQN to the target DQN
         if step % args.copy_steps == 0:
             copy_online_to_target.run()
@@ -266,4 +282,4 @@ with tf.Session() as sess:
         # And save regularly
         if step % args.save_steps == 0:
             saver.save(sess, args.path)
-            print("ok")
+            
