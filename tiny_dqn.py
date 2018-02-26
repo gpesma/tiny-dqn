@@ -14,7 +14,7 @@ parser.add_argument("-c", "--copy-steps", type=int, default=10000,
     help="number of training steps between copies of online DQN to target DQN")
 parser.add_argument("-r", "--render", action="store_true", default=False,
     help="render the game during training or testing")
-parser.add_argument("-p", "--path", default="./my_dqn.ckpt",
+parser.add_argument("-p", "--path", default="./kungfu4plus.ckpt",
     help="path of the checkpoint file")
 parser.add_argument("-t", "--test", action="store_true", default=False,
     help="test (no learning and minimal epsilon)")
@@ -28,18 +28,11 @@ import numpy as np
 import os
 import tensorflow as tf
 import csv
+import sys
 
 
-# with tf.device('/gpu:0'):
-#     a = tf.constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], shape=[2, 3], name='a')
-#     b = tf.constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], shape=[3, 2], name='b')
-#     c = tf.matmul(a, b)
 
-# with tf.Session() as sess:
-#     print (sess.run(c))
-
-
-env = gym.make("Boxing-v0")
+env = gym.make("KungFuMaster-v0")
 done = True  # env needs to be reset
 
 # First let's build the two DQNs (online & target)
@@ -145,16 +138,50 @@ def epsilon_greedy(q_values, step):
 # We need to preprocess the images to speed up training
 mspacman_color = np.array([210, 164, 74]).mean()
 
-def preprocess_observation(obs):
-    img = obs[1:176:2, ::2] # crop and downsize
+def preprocess_observation(q):
+    first = q.popleft()
+    second = q.popleft()
+    third = q.popleft()
+    fourth = q.popleft()
+    img = first[1:176:2, ::2] # crop and downsize
+    img2 = second[1:176:2, ::2]
+    # print (img)
+    # print ("AAAAAAA\n\n")
+    # print (img2)
+    # print ("BBBBBBB\n\n")
+    # print (img2 - img)
+    
+    #img = img - img2
+    img3 = third[1:176:2, ::2]
+    img4 = fourth[1:176:2, ::2]
+    img = img2 + img
+    img3 = img4 + img3
+    img = img + img3
     img = img.mean(axis=2) # to greyscale
     img[img==mspacman_color] = 0 # Improve contrast
-    img = (img - 128) / 128 - 1 # normalize from -1. to 1.
+    #img = (img - 128) / 128 - 1 # normalize from -1. to 1.
+    #print (img)
+    #sys.exit()
+    #img4 = img4.mean(axis=2) # to greyscale
+    #img4[img4==mspacman_color] = 0 # Improve contrast
+    #img4 = (img4 - 128) / 128 - 1
+
+    #img = np.array([88,80])
+    #img3 = np.array([88,80])
+
+    #img = img - img3
+    img = (img - 128) / 128 - 1
+    #res = np.array(img,img3)
+    q.append(first)
+    q.append(second)
+    q.append(third)
+    q.append(fourth)
+
     return img.reshape(88, 80, 1)
 
-def save_to_csv(file_name,iteration, step, perc, loss_val, mean_max_q):
+def save_to_csv(file_name,iteration, step, loss_val, mean_max_q, reward):
 	fd = open(file_name,'a')
-	to_write =str(iteration)+","+ str(step)+","+str(perc)+","+str(loss_val)+","+str(mean_max_q)+"\n"
+	to_write =str(iteration)+","+ str(step)+","+str(loss_val)+","+str(mean_max_q)+","+str(reward)+"\n"
 	fd.write(to_write)
 	fd.close()
 
@@ -172,6 +199,8 @@ game_length = 0
 total_max_q = 0
 mean_max_q = 0.0
 games_played = 1
+prev_obs = None
+queue = deque([None,None,None,None])
 with tf.Session() as sess:
     if os.path.isfile(args.path + ".index"):
         saver.restore(sess, args.path)
@@ -190,10 +219,19 @@ with tf.Session() as sess:
         #jjprint()
 
         # check progress
+        if iteration == 1:
+        	prev_obs = env.reset()
+        	queue.append(prev_obs)
+        	queue.append(prev_obs)
+        	queue.append(prev_obs)
+        	queue.append(prev_obs)
+        	queue.popleft()
+        	queue.popleft()
+        	queue.popleft()
+        	queue.popleft()
 
 
-
-        if iteration % 100 == 0:
+        if args.verbosity > 0:
             print("\rIteration {}   Training step {}/{} ({:.1f})%   "
                   "Loss {:5f}    Mean Max-Q {:5f}   ".format(
             iteration, step, args.number_steps, step * 100 / args.number_steps,
@@ -203,7 +241,12 @@ with tf.Session() as sess:
             obs = env.reset()
             for skip in range(skip_start): # skip the start of each game
                 obs, reward, done, info = env.step(0)
-            state = preprocess_observation(obs)
+                queue.append(obs)
+            	queue.popleft()
+
+            state = preprocess_observation(queue)
+            #prev_obs = obs
+            
             games_played = games_played + 1
 
 
@@ -211,22 +254,24 @@ with tf.Session() as sess:
             env.render()
 
         
-        # if iteration % 100 == 0:
-        # 	total_reward = 0
-        # 	while not done:
-        # 		q_values = target_q_values.eval(feed_dict={X_state: [state]})
-        # 		action = np.argmax(q_values)
-        # 		obs, reward, done, info = env.step(action)
-        # 		next_state = preprocess_observation(obs)
-        # 		state = next_state
-        # 		total_reward += reward
+        if iteration % 100 == 0:
+        	total_reward = 0
+        	while not done:
+        		q_values = target_q_values.eval(feed_dict={X_state: [state]})
+        		action = np.argmax(q_values)
+        		obs, reward, done, info = env.step(action)
+        		next_state = preprocess_observation(queue)
+        		state = next_state
+        		total_reward += reward
 
-        # 	for skip in range(skip_start): # skip the start of each game
-        # 		obs, reward, done, info = env.step(0)
-        # 		state = preprocess_observation(obs)
-        # 	save_to_csv("test1.csv", games_played, loss_val, q_values.max()/ game_length, total_reward)
-        # 	print (total_reward)
-        # 	continue
+        	for skip in range(skip_start): # skip the start of each game
+        		obs, reward, done, info = env.step(0)
+        		state = preprocess_observation(queue)
+        		queue.append(obs)
+            	queue.popleft()
+        	save_to_csv("test3.csv", iteration, step, loss_val, q_values.max()/ game_length, total_reward)
+        	#print (total_reward)
+        	continue
 
 
         # Online DQN evaluates what to do
@@ -236,7 +281,9 @@ with tf.Session() as sess:
 
         # Online DQN plays
         obs, reward, done, info = env.step(action)
-        next_state = preprocess_observation(obs)
+        next_state = preprocess_observation(queue)
+        queue.append(obs)
+        queue.popleft()
 
         # Let's memorize what happened
         replay_memory.append((state, action, reward, next_state, 1.0 - done))
